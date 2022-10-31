@@ -1,0 +1,148 @@
+package main
+
+import (
+	"fmt"
+	"math/rand"
+	"net"
+	"net/http"
+	"net/rpc"
+	"os"
+	"time"
+)
+
+var timeDuration int
+var MIN_TIMER int = 30
+var MAX_TIMER int = 50
+var timer *time.Timer
+
+var heartBeat = 0
+var self Node
+var Kapten = false
+var nomorKapten = 0
+
+type Message struct {
+}
+
+type raft struct {
+}
+
+type AttrServ struct {
+	index   int
+	term    int32
+	command string
+	commit  bool
+}
+
+var isi = []AttrServ{}
+
+func resetCountdownTimer() {
+	timer.Stop()
+	timeDuration = rand.Intn((MAX_TIMER - MIN_TIMER)) + MIN_TIMER
+}
+func heartbeatMessage() {
+	for heartBeat > 0 {
+		heartBeat -= 1
+		time.Sleep(1 * time.Second)
+	}
+	if heartBeat == 0 {
+		var result int
+		err := client.Call("REQ VOTE", &self, &result)
+		handleError(err)
+		Kapten = true
+		for _, server := range members{
+			if self == server{
+				server.leader = true
+			}else{
+				server.leader = false
+			}
+		}
+	}
+}
+
+func restartCountdownTimer() {
+	fmt.Println("Start timer with duration : ", timeDuration)
+	timer = time.AfterFunc(time.Duration(timeDuration)*time.Second, func() {
+		// Switch state to Candidate and init election
+
+		fmt.Println("Timer off")
+	})
+}
+
+func (t *raft) AddSensorData(iniisi *AttrServ, result *int) error {
+	// Reset countdown timer
+	resetCountdownTimer()
+	if iniisi != nil {
+		isi = append(isi, *iniisi)
+	}
+	*result = 30
+	return nil
+}
+
+func (t *raft) clientREQ(args *AttrServ, result *int){
+	if (Kapten){
+	isi = append(isi, *args)
+	for _, server := range members{
+		if server != self{
+			client, err := rpc.DialHTTP("tcp",server.address)
+			handleError(err)
+			var hasil int
+			err = client.Call("Raft.AppendEnties",args,&hasil)
+			handleError(err)
+		}
+	}
+		
+	}else{
+		for _, server:=range members{
+			if server.id == nomorKapten
+			client, err := rpc.DialHTTP("tcp",server.address)
+			handleError(err)
+			var hasil int
+			err = client.Call("Raft.ClientRequest", args, &hasil)
+			handleError(err)
+			break
+		
+		}
+	}
+}
+
+type Node struct {
+	id      int16
+	address string // address dengan format IP:Port
+	port string
+	leader  bool
+}
+
+var members = []Node{
+}
+
+func main() {
+
+	// Inisasi RPC server
+	serverID := os.Args[1]
+	// Inisasi RPC server
+	portNumber := os.Args[2]
+	// Inisiasi struct
+	service := &raft{}
+	// Registrasikan struct dan method ke RPC
+	rpc.Register(service)
+	// Deklarasikan bahwa kita menggunakan protokol HTTP sebagai mekanisme pengiriman pesan
+	rpc.HandleHTTP()
+	fmt.Println("Run server ", serverID, " on port : ", portNumber)
+	// Deklarasikan listerner HTTP dengan layer transport TCP dan Port 1234
+	listener, err := net.Listen("tcp", ":"+string(portNumber))
+	handleError(err)
+
+	// Start timer
+	resetCountdownTimer()
+	go restartCountdownTimer()
+
+	// Jalankan server HTTP
+	http.Serve(listener, nil)
+
+}
+
+func handleError(err error) {
+	if err != nil {
+		fmt.Println("Terdapat error : ", err.Error())
+	}
+}
